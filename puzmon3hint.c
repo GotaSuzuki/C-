@@ -37,11 +37,17 @@ typedef struct DUNGEON {
 // (h)パーティ
 typedef struct PARTY {
   // HINT: プレイヤー名を格納するメンバ
+  char* playerName;
   // HINT: 味方モンスター配列の先頭アドレスを格納するメンバ
+  Monster* monsters;
   // HINT: 味方モンスター数を格納するメンバ
+  const int numMonsters;
   // HINT: 最大HP（不変）を格納するメンバ
+  const int maxHp;
   // HINT: HPを格納するメンバ
+  int hp;
   // HINT: 防御力（不変）を格納するメンバ
+  const int defense;
 } Party;
 
 /*** プロトタイプ宣言 ***/
@@ -50,6 +56,8 @@ int goDungeon(Party* pParty, Dungeon* pDungeon);
 int doBattle(Party* pParty, Monster* pEnemy);
 // HINT: organizePartyのプロトタイプ宣言
 // HINT: showPartyのプロトタイプ宣言
+Party organizeParty(char* playerName, Monster* monsters, int numMonsters);
+void showParty(Party* pParty);
 
 // ユーティリティ関数
 void printMonsterName(Monster* monster);
@@ -70,6 +78,14 @@ int main(int argc, char** argv)
   // HINT: 味方モンスターを格納する要素数4のMonster配列 partyMonstersを定義し、
   //       "朱雀", FIRE,  150, 150, 25, 10
   //       などで初期化する。
+  Monster partyMonsters[] = {
+    {"朱雀", FIRE,  150, 150, 25, 10},
+    {"青龍", WIND,  150, 150, 15, 10},
+    {"白虎", EARTH, 150, 150, 20,  5},
+    {"玄武", WATER, 150, 150, 20, 15}
+  };
+
+  Party party = organizeParty(argv[1], partyMonsters, 4);
 
   // HINT: organizeParty関数を呼び出し、結果のパーティ構造体を
   //       Party型変数partyで受け取る
@@ -85,7 +101,7 @@ int main(int argc, char** argv)
   Dungeon dungeon = {dungeonMonsters, 5};
 
   // いざ、ダンジョンへ
-  int winCount = goDungeon(/* パーティのアドレス */, &dungeon);
+  int winCount = goDungeon(&party, &dungeon);
 
   // 冒険終了後
   if(winCount == dungeon.numMonsters) {
@@ -98,21 +114,26 @@ int main(int argc, char** argv)
 }
 
 // (2)ダンジョン開始から終了までの流れ
-int goDungeon(/* パーティのアドレス */, Dungeon* pDungeon)
+int goDungeon(Party* pParty, Dungeon* pDungeon)
 {
   // プレイヤーHP/最大HPの算出とメッセージ表示
   // HINT: 「○○のパーティ(HP=▲▲)はダンジョンに登場した」と表示する
   // HINT: showParty関数を呼び出し、パーティ情報を表示
+  //pParty->hpが合計で出される理由がわからない
+  printf("%sのパーティ(HP=%d)はダンジョンに到着した\n",pParty->playerName, pParty->hp);
+  showParty(pParty);
 
   // そのダンジョンでバトルを繰り返す
   int winCount = 0;
   for(int i = 0; i < pDungeon->numMonsters; i++) {
-    winCount += doBattle(/* パーティのアドレス */, &(pDungeon->monsters[i]));
-    // HINT: もしパーティのHPが0以下なら... {
-    // HINT:    「○○はダンジョンから逃げ出した」と表示してforループを途中脱出
-    // HINT: } そうでなければ {
-    // HINT:    「○○はさらに奥へと進んだ」と表示する
-    // HINT: }
+    winCount += doBattle(pParty, &(pDungeon->monsters[i]));
+    if(pParty->hp <= 0) {
+      printf("%sはダンジョンから逃げ出した...\n", pParty->playerName);
+      break;
+    } else {
+      printf("%sはさらに奥へと進んだ\n\n", pParty->playerName);
+      printf("================\n\n");
+    }
   }
 
   printf("%sはダンジョンを制覇した！\n", pParty->playerName);
@@ -132,28 +153,45 @@ int doBattle(Party* pParty, Monster* pEnemy)
 }
 
 // (4)パーティ編成処理
-Party organizeParty(/* HINT: プレイヤー名 */, /* HINT: 味方モンスター配列の先頭アドレス */, /* HINT: 味方モンスターの数 */)
+Party organizeParty(char* playerName, Monster* monsters, int numMonsters)
 {
   // HINT: HPと防御力を集計していくための変数を初期値0で準備
+  int sumHp = 0;
+  int sumDefense = 0;
   // HINT: 味方モンスターについて繰り返し {
   // HINT:     HP集計変数にi番目のモンスターのHPを追加
   // HINT:     防御力集計変数にi番目のモンスターの防御力を追加
   // HINT: }
   // HINT: 防御力集計をモンスター数で割って、平均防御力を算出
+  for(int i=0;i<numMonsters;i++){
+    sumHp += monsters[i].hp;
+    sumDefense += monsters[i].defense;
+  }
+  int avgDefense = sumDefense / numMonsters;
 
   // HINT: Party型変数を宣言し、プレイヤー名、味方モンスター配列の先頭アドレス、
   //       味方モンスター数、合計HP、合計HP、平均防御力で初期化する
-  return /* HINT: モンスター型変数 */;
+  Party p = {playerName, monsters, numMonsters, sumHp, sumHp, avgDefense};
+  return p;
 }
 
 // (5)パーティ情報の表示
-void showParty(/* パーティのアドレス*/)
+void showParty(Party* pParty)
 {
   printf("＜パーティ編成＞----------\n");
   // HINT: 味方モンスターの数だけ繰り返す {
   // HINT:      i番目のモンスターの名前を表示
   // HINT:      i番目のモンスターのHP、攻撃、防御を表示
   // HINT: }
+  for(int i=0;i<pParty->numMonsters;i++){
+    //&についての認識が不足している
+    printMonsterName(&(pParty->monsters[i]));
+    printf("  HP=%4d 攻撃=%3d 防御=%3d\n",
+      pParty->monsters[i].hp,
+      pParty->monsters[i].attack,
+      pParty->monsters[i].defense
+    );
+  }
   printf("------------------------\n\n");
 }
 
