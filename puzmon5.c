@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <stdbool.h>
+#include <string.h>
 
 /*** 列挙型宣言 ***/
 
@@ -68,12 +69,16 @@ void doAttack(BattleField* pField);
 void onEnemyTurn(BattleField* pField);
 void doEnemyAttack(BattleField* pField);
 void showBattleField(BattleField* pField);
+bool checkValidCommand(char* command);
+void evaluateGems(BattleField* pField);
 
 // ユーティリティ関数
 void printMonsterName(Monster* monster);
-void fillGems(Element* gems);
+void fillGems(Element* gems, bool emptyOnly);
 void printGems(Element* gems);
 void printGem(Element element);
+void moveGem(Element* gems, int fromPos, int toPos);
+void swapGem(Element* gems, int pos, int step);
 
 /*** 関数宣言 ***/
 
@@ -153,7 +158,7 @@ int doBattle(Party* pParty, Monster* pEnemy)
 
   // バトルフィールドの宝石スロットの準備と初期化
   BattleField field = {pParty, pEnemy};
-  fillGems(field.gems);
+  fillGems(field.gems, false);
 
   while(true) {
     onPlayerTurn(&field);
@@ -204,8 +209,16 @@ void showParty(Party* pParty)
 void onPlayerTurn(BattleField* pField)
 {
   printf("\n【%sのターン】\n", pField->pParty->playerName);
+
   showBattleField(pField);
-  doAttack(pField);
+
+  char command[3];
+  do {
+    printf("コマンド？>");
+    scanf("%s", command);
+  } while(checkValidCommand(command) == false);
+  moveGem(pField->gems, command[0] - 'A', command[1] - 'A');
+  evaluateGems(pField);
 }
 
 // (7)パーティの攻撃
@@ -254,6 +267,24 @@ void showBattleField(BattleField *pField)
   printf("------------------------------\n");
 }
 
+bool checkValidCommand(char* c)
+{
+  if(strlen(c) != 2) return false;
+  // 1文字目と2文字目が同じであれば不正
+  if(c[0] == c[1]) return false;
+  // 1文字目がA-Nの範囲で無ければ不正
+  if(c[0] < 'A' || c[0] > 'A' + MAX_GEMS - 1) return false;
+  // 2文字目もA-Nの範囲で無ければ不正
+  if(c[1] < 'A' || c[1] > 'A' + MAX_GEMS - 1) return false;
+  // それ以外は有効
+  return true;
+}
+
+void evaluateGems(BattleField* pField)
+{
+  doAttack(pField);
+}
+
 /*** ユーティリティ関数宣言 ***/
 
 // (A)モンスター名のカラー表示
@@ -267,7 +298,7 @@ void printMonsterName(Monster* pMonster)
 }
 
 // (B)スロットをランダムな宝石で埋める
-void fillGems(Element* gems)
+void fillGems(Element* gems, bool emptyOnly)
 {
   for(int i = 0; i < MAX_GEMS; i++) {
     gems[i] = rand() % EMPTY;
@@ -291,4 +322,23 @@ void printGem(Element e)
   printf("\x1b[4%dm", ELEMENT_COLORS[e]); // 属性色背景
   printf("%c", ELEMENT_SYMBOLS[e]);
   printf("\x1b[0m");        // 色指定解除
+}
+
+void moveGem(Element* gems, int fromPos, int toPos)
+{
+  // 移動方向（1=右、-1=左）
+  int step = (toPos > fromPos) ? 1 : -1;
+
+  printGems(gems);
+  for(int i = fromPos; i != toPos; i += step) {
+    swapGem(gems, i, step);
+    printGems(gems);
+  }
+}
+
+void swapGem(Element* gems, int pos, int step)
+{
+  Element buf = gems[pos];
+  gems[pos] = gems[pos + step];
+  gems[pos + step] = buf;
 }
