@@ -1,4 +1,4 @@
-/*=== puzmon6: 宝石移動処理の実装 ===*/
+/*=== puzmon7: 消滅処理（コンボなし）の実装 ===*/
 /*** インクルード宣言 ***/
 
 #include <stdio.h>
@@ -58,6 +58,7 @@ typedef struct BATTLE_FIELD {
   Element gems[MAX_GEMS];
 } BattleField;
 
+// (j)連続配置宝石の位置情報
 typedef struct BANISH_INFO {
   int pos;
   int len;
@@ -77,14 +78,19 @@ void doEnemyAttack(BattleField* pField);
 void showBattleField(BattleField* pField);
 bool checkValidCommand(char* command);
 void evaluateGems(BattleField* pField);
+BanishInfo checkBanishable(Element* gems);
+void banishGems(BattleField *pField, BanishInfo bi);
+void shiftGems(Element* gems);
+void spawnGems(Element* gems);
 
 // ユーティリティ関数
 void printMonsterName(Monster* monster);
 void fillGems(Element* gems, bool emptyOnly);
 void printGems(Element* gems);
 void printGem(Element element);
-void moveGem(Element* gems, int fromPos, int toPos);
+void moveGem(Element* gems, int fromPos, int toPos, bool printProcess);
 void swapGem(Element* gems, int pos, int step);
+int countGems(Element* gems, Element target);
 
 /*** 関数宣言 ***/
 
@@ -226,10 +232,9 @@ void onPlayerTurn(BattleField* pField)
   } while(checkValidCommand(command) == false);
 
   // 宝石を移動させた上で、「宝石スロットの評価」を機能させる
-  moveGem(pField->gems, command[0] - 'A', command[1] - 'A');
+  moveGem(pField->gems, command[0] - 'A', command[1] - 'A', true);
   evaluateGems(pField);
 }
-
 
 // (7)パーティの攻撃
 void doAttack(BattleField* pField)
@@ -304,6 +309,69 @@ void evaluateGems(BattleField* pField)
   }
 }
 
+// (13)宝石の消滅可能箇所判定
+BanishInfo checkBanishable(Element* gems)
+{
+  const int BANISH_GEMS = 3;    // 消滅に必要な連続数
+
+  for(int i = 0; i < MAX_GEMS - BANISH_GEMS + 1; i++) {
+    Element targetGem = gems[i];
+    int len = 1;
+    if(targetGem == EMPTY) continue;
+    for(int j = i + 1; j < MAX_GEMS; j++) {
+      if(gems[i] == gems[j]) {
+        len++;
+      } else {
+        break;
+      }
+    }
+    if(len >= BANISH_GEMS) {
+      BanishInfo found = {i, len, targetGem};
+      return found;
+    }
+  }
+
+  // 見付からなかった
+  BanishInfo notFound = {0, 0, EMPTY};
+  return notFound;
+}
+
+// (14)指定箇所の宝石を消滅させ効果発動
+void banishGems(BattleField *pField, BanishInfo bi)
+{
+   // 宝石の消滅
+   for(int i = bi.pos; i < bi.pos + bi.len; i++) {
+     pField->gems[i] = EMPTY;
+   }
+   printGems(pField->gems);
+
+   doAttack(pField);
+}
+
+// (15)空いている部分を左詰めしていく
+void shiftGems(Element* gems)
+{
+  // まずEMPTYの数を数える
+  int numEmpty = countGems(gems, EMPTY);
+
+  // 先頭からMAX_GEMS-numEmpty-1番目までのEMPTYを右端へ移動
+  for(int i = 0; i < MAX_GEMS - numEmpty; i++) {
+    if(gems[i] == EMPTY) {
+      moveGem(gems, i, MAX_GEMS - 1, false);
+      i--;    // 初回右隣もEMPTYだった場合に備えて再実施
+    }
+  }
+
+  printGems(gems);
+}
+
+// (16)空き領域に宝石が沸く
+void spawnGems(Element* gems)
+{
+  fillGems(gems, true);
+  printGems(gems);
+}
+
 /*** ユーティリティ関数宣言 ***/
 
 // (A)モンスター名のカラー表示
@@ -346,7 +414,7 @@ void printGem(Element e)
 }
 
 // (E)指定の宝石を指定の位置まで1つずつ移動させる
-void moveGem(Element* gems, int fromPos, int toPos)
+void moveGem(Element* gems, int fromPos, int toPos, bool printProcess)
 {
   // 移動方向（1=右、-1=左）
   int step = (toPos > fromPos) ? 1 : -1;
@@ -354,7 +422,7 @@ void moveGem(Element* gems, int fromPos, int toPos)
   printGems(gems);
   for(int i = fromPos; i != toPos; i += step) {
     swapGem(gems, i, step);
-    printGems(gems);
+    if(printProcess) printGems(gems);
   }
 }
 
@@ -364,4 +432,14 @@ void swapGem(Element* gems, int pos, int step)
   Element buf = gems[pos];
   gems[pos] = gems[pos + step];
   gems[pos + step] = buf;
+}
+
+// (G)指定種類の宝石のカウント
+int countGems(Element* gems, Element target)
+{
+  int num = 0;
+  for(int i = 0; i < MAX_GEMS; i++) {
+    if(gems[i] == target) num++;
+  }
+  return num;
 }

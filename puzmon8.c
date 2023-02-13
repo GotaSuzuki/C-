@@ -1,4 +1,4 @@
-/*=== puzmon6: 宝石移動処理の実装 ===*/
+/*=== puzmon8: 攻撃処理の実装 ===*/
 /*** インクルード宣言 ***/
 
 #include <stdio.h>
@@ -22,6 +22,17 @@ const char ELEMENT_COLORS[EMPTY+1] = {1,6,2,3,5,0};
 
 // (d)バトルフィールドに並ぶ宝石の数
 enum {MAX_GEMS = 14};
+
+// (e)属性別の強弱関係
+const double ELEMENT_BOOST[EMPTY+1][EMPTY+1] = {
+ // FIRE WATER WIND EARTH LIFE EMPTY
+  { 1.0, 0.5, 2.0, 1.0, 1.0, 1.0 }, // FIRE
+  { 2.0, 1.0, 1.0, 0.5, 1.0, 1.0 }, // WATER
+  { 0.5, 1.0, 1.0, 2.0, 1.0, 1.0 }, // WIND
+  { 1.0, 2.0, 0.5, 1.0, 1.0, 1.0 }, // EARTH
+  { 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 }, // LIFE
+  { 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 }  // EMPTY
+};
 
 /*** 構造体型宣言 ***/
 
@@ -58,6 +69,7 @@ typedef struct BATTLE_FIELD {
   Element gems[MAX_GEMS];
 } BattleField;
 
+// (j)連続配置宝石の位置情報
 typedef struct BANISH_INFO {
   int pos;
   int len;
@@ -71,20 +83,30 @@ int doBattle(Party* pParty, Monster* pEnemy);
 Party organizeParty(char* playerName, Monster* monsters, int numMonsters);
 void showParty(Party* pParty);
 void onPlayerTurn(BattleField* pField);
-void doAttack(BattleField* pField);
+void doAttack(BattleField* pField, BanishInfo bi);
 void onEnemyTurn(BattleField* pField);
 void doEnemyAttack(BattleField* pField);
 void showBattleField(BattleField* pField);
 bool checkValidCommand(char* command);
 void evaluateGems(BattleField* pField);
+BanishInfo checkBanishable(Element* gems);
+void banishGems(BattleField *pField, BanishInfo bi);
+void shiftGems(Element* gems);
+void spawnGems(Element* gems);
+void doRecover(BattleField* pField, BanishInfo bi);
 
 // ユーティリティ関数
 void printMonsterName(Monster* monster);
 void fillGems(Element* gems, bool emptyOnly);
 void printGems(Element* gems);
 void printGem(Element element);
-void moveGem(Element* gems, int fromPos, int toPos);
+void moveGem(Element* gems, int fromPos, int toPos, bool printProcess);
 void swapGem(Element* gems, int pos, int step);
+int countGems(Element* gems, Element target);
+int blurDamage(int base, int percent);
+int calcEnemyAttackDamage(Party* pParty, Monster* pEnemy);
+int calcAttackDamage(Monster* pAttackMonster, Monster* pEnemy, BanishInfo bi, int numCombo);
+int calcRecoverDamage(BattleField *pField, BanishInfo bi, int numCombo);
 
 /*** 関数宣言 ***/
 
@@ -226,16 +248,27 @@ void onPlayerTurn(BattleField* pField)
   } while(checkValidCommand(command) == false);
 
   // 宝石を移動させた上で、「宝石スロットの評価」を機能させる
-  moveGem(pField->gems, command[0] - 'A', command[1] - 'A');
+  moveGem(pField->gems, command[0] - 'A', command[1] - 'A', true);
   evaluateGems(pField);
 }
 
-
 // (7)パーティの攻撃
-void doAttack(BattleField* pField)
+void doAttack(BattleField* pField, BanishInfo bi)
 {
-  pField->pEnemy->hp -= 80;
-  printf("ダミー攻撃で80のダメージを与えた\n");
+  for(int i = 0; i < pField->pParty->numMonsters; i++) {
+    Monster* attacker = &(pField->pParty->monsters[i]);
+    if(attacker->element == bi.element) {
+      // 攻撃の実行
+      printMonsterName(attacker);
+      printf("の攻撃！ \n");
+      printf("\n");
+
+      int damage = calcAttackDamage(attacker, pField->pEnemy, bi, 1);
+
+      pField->pEnemy->hp -= damage;
+      printf("%sに%dのダメージ！\n", pField->pEnemy->name, damage);
+    }
+  }
 }
 
 // (8)敵モンスターターン
@@ -248,9 +281,12 @@ void onEnemyTurn(BattleField* pField)
 // (9)敵モンスターの攻撃
 void doEnemyAttack(BattleField* pField)
 {
-  // ダミーのダメージ計算
-  pField->pParty->hp -= 20;
-  printf("20のダメージを受けた\n");
+    printMonsterName(pField->pEnemy);
+    printf("の攻撃!");
+
+    int damage = calcEnemyAttackDamage(pField->pParty, pField->pEnemy);
+    pField->pParty->hp -= damage;
+    printf("%dのダメージを受けた\n", damage);
 }
 
 // (10)バトルフィールド情報の表示
@@ -304,6 +340,89 @@ void evaluateGems(BattleField* pField)
   }
 }
 
+// (13)宝石の消滅可能箇所判定
+BanishInfo checkBanishable(Element* gems)
+{
+  const int BANISH_GEMS = 3;    // 消滅に必要な連続数
+
+  for(int i = 0; i < MAX_GEMS - BANISH_GEMS + 1; i++) {
+    Element targetGem = gems[i];
+    int len = 1;
+    if(targetGem == EMPTY) continue;
+    for(int j = i + 1; j < MAX_GEMS; j++) {
+      if(gems[i] == gems[j]) {
+        len++;
+      } else {
+        break;
+      }
+    }
+    if(len >= BANISH_GEMS) {
+      BanishInfo found = {i, len, targetGem};
+      return found;
+    }
+  }
+
+  // 見付からなかった
+  BanishInfo notFound = {0, 0, EMPTY};
+  return notFound;
+}
+
+// (14)指定箇所の宝石を消滅させ効果発動
+void banishGems(BattleField *pField, BanishInfo bi)
+{
+   // 宝石の消滅
+   for(int i = bi.pos; i < bi.pos + bi.len; i++) {
+     pField->gems[i] = EMPTY;
+   }
+   printGems(pField->gems);
+
+   // 効果の発動
+   switch(bi.element) {
+     case FIRE: case WATER: case WIND: case EARTH:
+      doAttack(pField, bi);
+      break;
+     case LIFE:
+      doRecover(pField, bi);
+      break;
+     default:
+      break;
+   }
+}
+
+// (15)空いている部分を左詰めしていく
+void shiftGems(Element* gems)
+{
+  // まずEMPTYの数を数える
+  int numEmpty = countGems(gems, EMPTY);
+
+  // 先頭からMAX_GEMS-numEmpty-1番目までのEMPTYを右端へ移動
+  for(int i = 0; i < MAX_GEMS - numEmpty; i++) {
+    if(gems[i] == EMPTY) {
+      moveGem(gems, i, MAX_GEMS - 1, false);
+      i--;    // 初回右隣もEMPTYだった場合に備えて再実施
+    }
+  }
+
+  printGems(gems);
+}
+
+// (16)空き領域に宝石が沸く
+void spawnGems(Element* gems)
+{
+  fillGems(gems, true);
+  printGems(gems);
+}
+
+// (17)宝石の消滅による回復
+void doRecover(BattleField* pField, BanishInfo bi)
+{
+  printf("%sは命の宝石を使った!\n", pField->pParty->playerName);
+
+  int damage = calcRecoverDamage(pField, bi, 1);
+  pField->pParty->hp += damage;
+  printf("HPが%d回復した!\n", damage);
+}
+
 /*** ユーティリティ関数宣言 ***/
 
 // (A)モンスター名のカラー表示
@@ -346,7 +465,7 @@ void printGem(Element e)
 }
 
 // (E)指定の宝石を指定の位置まで1つずつ移動させる
-void moveGem(Element* gems, int fromPos, int toPos)
+void moveGem(Element* gems, int fromPos, int toPos, bool printProcess)
 {
   // 移動方向（1=右、-1=左）
   int step = (toPos > fromPos) ? 1 : -1;
@@ -354,7 +473,7 @@ void moveGem(Element* gems, int fromPos, int toPos)
   printGems(gems);
   for(int i = fromPos; i != toPos; i += step) {
     swapGem(gems, i, step);
-    printGems(gems);
+    if(printProcess) printGems(gems);
   }
 }
 
@@ -364,4 +483,60 @@ void swapGem(Element* gems, int pos, int step)
   Element buf = gems[pos];
   gems[pos] = gems[pos + step];
   gems[pos + step] = buf;
+}
+
+// (G)指定種類の宝石のカウント
+int countGems(Element* gems, Element target)
+{
+  int num = 0;
+  for(int i = 0; i < MAX_GEMS; i++) {
+    if(gems[i] == target) num++;
+  }
+  return num;
+}
+
+// (H)ある値を基準に±percent％の幅でランダムなダメージ値を算出
+int blurDamage(int base, int percent)
+{
+  int r = rand() % (percent * 2 + 1) - percent + 100;
+  return base * r / 100;
+}
+
+// (I)敵モンスターによる攻撃ダメージを計算
+int calcEnemyAttackDamage(Party* pParty, Monster* pEnemy)
+{
+  int damage = blurDamage(pEnemy->attack - pParty->defense, 10);
+  if(damage <= 0) damage = 1;
+  return damage;
+}
+
+// (J)味方モンスターによる攻撃ダメージ計算
+int calcAttackDamage(Monster* pAttackMonster, Monster* pEnemy, BanishInfo bi, int numCombo)
+{
+  int damage = (pAttackMonster->attack - pEnemy->defense) *
+    ELEMENT_BOOST[pAttackMonster->element][pEnemy->element];
+  for(int j = 0; j < bi.len - 2 + numCombo; j++) {
+    damage *= 1.25;
+  }
+  damage = blurDamage(damage, 10);
+  if(damage <= 0) damage = 1;
+  return damage;
+}
+
+// (K)回復ダメージ計算
+int calcRecoverDamage(BattleField *pField, BanishInfo bi, int numCombo)
+{
+  int damage = 20;
+  int boost = bi.len - 2 + numCombo;
+  for(int i = 0; i < boost; i++) {
+    damage *= 1.25;
+  }
+  damage = blurDamage(damage, 10);
+
+  // 最大HP以上には回復できない
+  int recoverble = pField->pParty->maxHp - pField->pParty->hp;
+  if(recoverble < damage) {
+    damage = recoverble;
+  }
+  return damage;
 }
