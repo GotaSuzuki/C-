@@ -1,4 +1,4 @@
-/*=== puzmon3: 味方パーティ関連処理の実装 ===*/
+/*=== puzmon4: バトルの基本的な流れの実装 ===*/
 /*** インクルード宣言 ***/
 
 #include <stdio.h>
@@ -132,16 +132,17 @@ int doBattle(Party* pParty, Monster* pEnemy)
 {
   printMonsterName(pEnemy);
   printf("が現れた！\n");
-  
+
+  // 交互ターン繰り返し
   while(true) {
     onPlayerTurn(pParty, pEnemy);
-    if(pEnemy->hp <= 0){
+    if(pEnemy->hp <= 0) {           // 撃破判定
       printMonsterName(pEnemy);
-      printf("を倒した");
+      printf("を倒した！\n");
       return 1;
     }
     onEnemyTurn(pParty, pEnemy);
-    if(pParty->hp <= 0){
+    if(pParty->hp <= 0) {           // 敗北判定
       printf("%sは倒れた...\n", pParty->playerName);
       return 0;
     }
@@ -178,28 +179,33 @@ void showParty(Party* pParty)
   printf("------------------------\n\n");
 }
 
+// (6)プレイヤーターン
 void onPlayerTurn(Party* pParty, Monster* pEnemy)
 {
   printf("\n【%sのターン】\n", pParty->playerName);
   doAttack(pEnemy);
 }
 
+// (7)パーティの攻撃
 void doAttack(Monster* pEnemy)
 {
   pEnemy->hp -= 80;
   printf("ダミー攻撃で80のダメージを与えた\n");
 }
 
+// (8)敵モンスターターン
 void onEnemyTurn(Party* pParty, Monster* pEnemy)
 {
   printf("\n【%sのターン】\n", pEnemy->name);
   doEnemyAttack(pParty);
 }
 
+// (9)敵モンスターの攻撃
 void doEnemyAttack(Party* pParty)
 {
+  // ダミーのダメージ計算
   pParty->hp -= 20;
-  printf("ダミー攻撃で20のダメージを与えた\n");
+  printf("20のダメージを受けた\n");
 }
 
 /*** ユーティリティ関数宣言 ***/
