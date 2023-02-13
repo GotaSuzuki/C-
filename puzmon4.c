@@ -2,9 +2,13 @@
 /*** インクルード宣言 ***/
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 #include <stdbool.h>
 
 /*** 列挙型宣言 ***/
+
+
 
 // (a)属性
 typedef enum Element {FIRE, WATER, WIND, EARTH, LIFE, EMPTY} Element;
@@ -16,6 +20,8 @@ const char ELEMENT_SYMBOLS[EMPTY+1] = {'$','~','@','#','&', ' '};
 
 // (c)属性別のカラーコード（ディスプレイ制御シーケンス用）
 const char ELEMENT_COLORS[EMPTY+1] = {1,6,2,3,5,0};
+
+enum {MAX_GEMS = 14};
 
 /*** 構造体型宣言 ***/
 
@@ -45,19 +51,29 @@ typedef struct PARTY {
   const int defense;
 } Party;
 
+typedef struct BATTLE_FIELD {
+  Party* pParty;
+  Monster* pEnemy;
+  Element gems[MAX_GEMS];
+} BattleField;
+
 /*** プロトタイプ宣言 ***/
 
 int goDungeon(Party* pParty, Dungeon* pDungeon);
 int doBattle(Party* pParty, Monster* pEnemy);
 Party organizeParty(char* playerName, Monster* monsters, int numMonsters);
 void showParty(Party* pParty);
-void onPlayerTurn(Party* pParty, Monster* pEnemy);
-void doAttack(Monster* pEnemy);
-void onEnemyTurn(Party* pParty, Monster* pEnemy);
-void doEnemyAttack(Party* pParty);
+void onPlayerTurn(BattleField* pField);
+void doAttack(BattleField* pField);
+void onEnemyTurn(BattleField* pField);
+void doEnemyAttack(BattleField* pField);
+void showBattleField(BattleField* pField);
 
 // ユーティリティ関数
 void printMonsterName(Monster* monster);
+void fillGems(Element* gems);
+void printGems(Element* gems);
+void printGem(Element element);
 
 /*** 関数宣言 ***/
 
@@ -133,15 +149,18 @@ int doBattle(Party* pParty, Monster* pEnemy)
   printMonsterName(pEnemy);
   printf("が現れた！\n");
 
+  BattleField field = {pParty, pEnemy};
+  fillGems(field.gems);
+
   // 交互ターン繰り返し
   while(true) {
-    onPlayerTurn(pParty, pEnemy);
+    onPlayerTurn(&field);
     if(pEnemy->hp <= 0) {           // 撃破判定
       printMonsterName(pEnemy);
       printf("を倒した！\n");
       return 1;
     }
-    onEnemyTurn(pParty, pEnemy);
+    onEnemyTurn(&field);
     if(pParty->hp <= 0) {           // 敗北判定
       printf("%sは倒れた...\n", pParty->playerName);
       return 0;
@@ -180,32 +199,56 @@ void showParty(Party* pParty)
 }
 
 // (6)プレイヤーターン
-void onPlayerTurn(Party* pParty, Monster* pEnemy)
+void onPlayerTurn(BattleField* pField)
 {
-  printf("\n【%sのターン】\n", pParty->playerName);
-  doAttack(pEnemy);
+  printf("\n【%sのターン】\n", pField->pParty->playerName);
+  showBattleField(pField);
+  doAttack(pField);
 }
 
 // (7)パーティの攻撃
-void doAttack(Monster* pEnemy)
+void doAttack(BattleField* pField)
 {
-  pEnemy->hp -= 80;
+  pField->pEnemy->hp -= 80;
   printf("ダミー攻撃で80のダメージを与えた\n");
 }
 
 // (8)敵モンスターターン
-void onEnemyTurn(Party* pParty, Monster* pEnemy)
+void onEnemyTurn(BattleField* pField)
 {
-  printf("\n【%sのターン】\n", pEnemy->name);
-  doEnemyAttack(pParty);
+  printf("\n【%sのターン】\n", pField->pEnemy->name);
+  doEnemyAttack(pField);
 }
 
 // (9)敵モンスターの攻撃
-void doEnemyAttack(Party* pParty)
+void doEnemyAttack(BattleField* pField)
 {
   // ダミーのダメージ計算
-  pParty->hp -= 20;
+  pField->pParty->hp -= 20;
   printf("20のダメージを受けた\n");
+}
+
+void showBattleField(BattleField *pField)
+{
+  printf("------------------------------\n\n");
+  printf("          ");
+  printMonsterName(pField->pEnemy);
+  printf("\n       HP= %4d / %4d\n", pField->pEnemy->hp, pField->pEnemy->maxhp);
+  printf("\n\n");
+  for(int i = 0; i < pField->pParty->numMonsters; i++) {
+    printMonsterName(&(pField->pParty->monsters[i]));
+    printf("  ");
+  }
+  printf("\n");
+  printf("       HP= %4d / %4d\n", pField->pParty->hp, pField->pParty->maxHp);
+  printf("------------------------------\n");
+  printf(" ");
+  for(int i = 0; i < MAX_GEMS; i++ ){
+    printf("%c ", 'A'+i);
+  }
+  printf("\n");
+  printGems(pField->gems);
+  printf("------------------------------\n");
 }
 
 /*** ユーティリティ関数宣言 ***/
@@ -218,4 +261,28 @@ void printMonsterName(Monster* pMonster)
   printf("\x1b[3%dm", ELEMENT_COLORS[pMonster->element]);
   printf("%c%s%c", symbol, pMonster->name, symbol);
   printf("\x1b[0m");
+}
+
+void fillGems(Element* gems)
+{
+  for(int i = 0; i < MAX_GEMS; i++) {
+    gems[i] = rand() % EMPTY;
+  }
+}
+
+void printGems(Element* gems)
+{
+  for(int i = 0; i < MAX_GEMS; i++) {
+    printf(" ");
+    printGem(gems[i]);
+  }
+  printf("\n");
+}
+
+void printGem(Element e)
+{
+  printf("\x1b[30m");       // 黒文字
+  printf("\x1b[4%dm", ELEMENT_COLORS[e]); // 属性色背景
+  printf("%c", ELEMENT_SYMBOLS[e]);
+  printf("\x1b[0m");        // 色指定解除
 }
